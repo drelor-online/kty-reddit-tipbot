@@ -12,7 +12,6 @@ from tipper_functions import (
     account_subtract_balance,
     TipError,
     update_history_notes,
-    parse_stroop_amount,
     send_pm,
     activate,
 )
@@ -20,7 +19,6 @@ from tipper_rpc import (
     get_fee,
     get_balances,
     is_account_open,
-    account_has_trustline,
     send_payment,
 )
 from text import WELCOME_CREATE, WELCOME_TIP, COMMENT_FOOTER, NEW_TIP, StatusResponse
@@ -29,11 +27,8 @@ from shared import (
     REDDIT,
     LOGGER,
     ACCOUNT,
-    CURRENCY,
-    CURRENCY_ISSUER,
+    CONTRACT_ADDRESS
     TIPBOT_OWNERS,
-    to_stroop,
-    from_stroop,
     Account,
     History,
     Subreddit,
@@ -120,7 +115,7 @@ def handle_balance(message):
         account_info = tipper_functions.account_info(username)
         results = account.balance
         response = text.BALANCE % (
-            from_stroop(results), ACCOUNT, account_info["memo"]
+            results, ACCOUNT, account_info["memo"]
         )
         return response        
     except Account.DoesNotExist:
@@ -185,10 +180,10 @@ def handle_history(message):
             try:
                 amount = result.amount
                 if (result.action == "send") and amount:
-                    amount = from_stroop(int(result.amount))
+                    amount = int(result.amount)
                     if result.notes == "sent to user":
                         response += (
-                            "%s: %s | %s MayoCoin to %s | reddit object: %s | %s\n\n"
+                            "%s: %s | %s KTY to %s | reddit object: %s | %s\n\n"
                             % (
                                 result.reddit_time.strftime("%Y-%m-%d %H:%M:%S"),
                                 result.action,
@@ -200,7 +195,7 @@ def handle_history(message):
                         )
                     elif result.notes == "sent to address":
                         response += (
-                            "%s: %s | %s MayoCoin to %s | reddit object: %s | %s\n\n"
+                            "%s: %s | %s KTY to %s | reddit object: %s | %s\n\n"
                             % (
                                 result.reddit_time.strftime("%Y-%m-%d %H:%M:%S"),
                                 result.action,
@@ -212,11 +207,11 @@ def handle_history(message):
                         )
                 elif result.action == "receive":
                         response += (
-                            "%s: %s | %s MayoCoin | %s\n\n"
+                            "%s: %s | %s KTY | %s\n\n"
                             % (
                                 result.reddit_time.strftime("%Y-%m-%d %H:%M:%S"),
                                 result.action,
-                                from_stroop(int(result.amount)),
+                                int(result.amount),
                                 result.notes,
                             )
                         )                      
@@ -336,15 +331,15 @@ def handle_stats(message):
     if not str(message.author).lower() in TIPBOT_OWNERS:
         return text.SUBREDDIT["not_maintainer"]
     off_chain_balance = Account.select(fn.SUM(Account.balance).alias('sum_balance')).get()
-    response = f"Off-chain balance: {from_stroop(off_chain_balance.sum_balance):.2f} MayoCoin  \n\n"
+    response = f"Off-chain balance: {off_chain_balance.sum_balance:.2f} KTY  \n\n"
     main_account_balances = get_balances(ACCOUNT)
     if "cannacoin" in main_account_balances:
         balance = main_account_balances["cannacoin"]
-        response += f"On-chain balance: {from_stroop(balance):.2f} MayoCoin  \n\n"
+        response += f"On-chain balance: {balance:.2f} KTY  \n\n"
     response += "\nTop accounts:  \n\n"
     accounts = Account.select(Account.username, Account.balance).order_by(Account.balance.desc()).limit(10)
     for idx, account in enumerate(accounts):
-        response += f"{idx:02d}. {account.username} | {from_stroop(account.balance):.2f} MayoCoin  \n\n"
+        response += f"{idx:02d}. {account.username} | {account.balance:.2f} KTY  \n\n"
     return response  
 
 
@@ -377,7 +372,7 @@ def handle_send(message):
         response["amount"] = parsed_text[1]
         return response
     # Check if the amount is above the program minimum
-    if response["amount"] < to_stroop(PROGRAM_MINIMUM):
+    if response["amount"] < PROGRAM_MINIMUM:
         response["status"] = StatusResponse.BELOW_PROGRAM_MINIMUM
         return response
     # Check for sufficient funds
@@ -417,23 +412,19 @@ def handle_send(message):
         elif not recipient_info["opt_in"]: # Existing account, check if opted out
             response["status"] = StatusResponse.USER_OPTED_OUT
             return response
-        LOGGER.info(f"Tipping MayoCoin: {sender_info['username']} {recipient_name} {response['amount']}")
+        LOGGER.info(f"Tipping KTY: {sender_info['username']} {recipient_name} {response['amount']}")
         account_tip(sender_info["username"], recipient_name, response["amount"])
         History.update(notes = "sent to user", recipient_username = recipient_name, 
                        amount = str(response["amount"]), return_status="cleared").where(History.id == entry_id).execute()        
-    # Check if we can send to a Stellar address.
+    # Check if we have enough BNB to cover fees.
     if "address" in recipient_info.keys():
-        fee = get_fee()
         response["recipient"] = recipient_info["address"]
         main_account_balances = get_balances(ACCOUNT)
-        if main_account_balances["xlm"] <= to_stroop(1.0) + fee:
-            response["status"] = StatusResponse.NOT_ENOUGH_XLM
+        if main_account_balances["bnb"] <= 0.01:
+            response["status"] = StatusResponse.NOT_ENOUGH_BNB
             return response
-        if not account_has_trustline(recipient_info["address"], CURRENCY, CURRENCY_ISSUER):
-            response["status"] = StatusResponse.NO_TRUSTLINE
-            return response            
-        LOGGER.info(f"Sending MayoCoin: {response['amount']} {recipient_info['address']} {sender_info['memo']}")
-        succeeded = send_payment(recipient_info["address"], response["amount"], sender_info["memo"], fee)
+        LOGGER.info(f"Sending KTY: {response['amount']} {recipient_info['address']}")
+        succeeded = send_payment(recipient_info["address"], response["amount"], fee)
         if succeeded:
             response["status"] = StatusResponse.SENT_TO_ADDRESS
             account_subtract_balance(sender_info["username"], response["amount"])
@@ -444,7 +435,6 @@ def handle_send(message):
                 source_account = ACCOUNT,
                 destination_account = recipient_info["address"],
                 amount = response["amount"],
-                memo = sender_info["memo"],
                 notes = "withdrawn"
             )      
             record.save()                  
@@ -453,14 +443,14 @@ def handle_send(message):
         return response
     if response["status"] == StatusResponse.SENT_TO_NEW_USER:
         subject = text.SUBJECTS["first_tip"]
-        message_text = (WELCOME_TIP % (NumberUtil.format_float(from_stroop(response["amount"])), ACCOUNT, sender_info["memo"]) + COMMENT_FOOTER)
+        message_text = (WELCOME_TIP % (NumberUtil.format_float(response["amount"]), ACCOUNT, sender_info["memo"]) + COMMENT_FOOTER)
         send_pm(recipient_info["username"], subject, message_text)
         return response
     else:
         if not recipient_info["silence"]:
             recipient_info = tipper_functions.account_info(recipient_name) # Update balance
             subject = text.SUBJECTS["new_tip"]
-            message_text = (NEW_TIP % (NumberUtil.format_float(from_stroop(response["amount"])), from_stroop(recipient_info["balance"])) + COMMENT_FOOTER)
+            message_text = (NEW_TIP % (NumberUtil.format_float(response["amount"]), recipient_info["balance"]) + COMMENT_FOOTER)
             send_pm(recipient_info["username"], subject, message_text)
         return response
 
@@ -491,7 +481,7 @@ def handle_opt_in(message):
     return response
 
 
-# Determines if a recipient is an MayoCoin address or a redditor.
+# Determines if a recipient is an KTY address or a redditor.
 def parse_recipient_username(recipient_text):
     # remove the /u/ or u/
     if recipient_text[:3].lower() == "/u/":

@@ -4,13 +4,15 @@ import configparser
 import praw
 import logging
 import sys
-import stellar_sdk
+import json
+import config
 from decimal import Decimal, getcontext
 from hashlib import blake2b
 from peewee import *
 from playhouse.pool  import PooledMySQLDatabase
+from web3 import Web3
 
-LOGGER = logging.getLogger("poopstar-reddit-tipbot")
+LOGGER = logging.getLogger("kty-reddit-tipbot")
 LOGGER.setLevel(logging.DEBUG)
 handler = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
@@ -28,12 +30,10 @@ try:
     TIPBOT_OWNERS = config["BOT"]["tipbot_owners"].split(",")
     MAIN_SUB = config["BOT"]["main_sub"]
     PYTHON_COMMAND = config["BOT"]["python_command"]
-    CURRENCY = config["BOT"]["currency"]
-    CURRENCY_ISSUER = config["BOT"]["currency_issuer"]
-    DEFAULT_FEE = config["BOT"]["default_fee"]
+    CONTRACT_ADDRESS = config["BOT"]["contract_address"]
     DEFAULT_URL = config["NODE"]["default_url"]
     ACCOUNT = config["NODE"]["account"]
-    SECRET = config["NODE"]["secret"]
+    PRIVATE_KEY = config["NODE"]["private_key"]
     DATABASE_HOST = config["DB"]["database_host"]
     DATABASE_NAME = config["DB"]["database_name"]
     DATABASE_USER = config["DB"]["database_user"]
@@ -62,19 +62,6 @@ class NumberUtil(object):
             as_str = as_str.replace('.', '')
         return as_str
 
-def to_stroop(amount):
-    amount = abs(float(amount))
-    asStr = str(amount).split(".")
-    wholeNumbers = int(asStr[0])
-    if len(asStr[1]) > 2:
-        asStr[1] = asStr[1][:2]
-    asStr[1] = asStr[1].ljust(2, '0')
-    decimals = int(asStr[1])
-    return (wholeNumbers * (10**7)) + (decimals * (10 ** 5))
-
-def from_stroop(amount):
-    return float(amount) / (10 ** 7)
-
 # Checks if the scripts should stop, based on the presence of a file.
 def should_stop():
     if os.path.isfile("./stop"):
@@ -90,7 +77,7 @@ class Account(BaseModel):
     created = DateTimeField(default=datetime.datetime.utcnow)
     updated = DateTimeField(default=datetime.datetime.utcnow)
     username = CharField(primary_key=True)
-    memo = CharField(unique=True)
+    address = CharField(unique=True)
     balance = BigIntegerField(default=0)
     silence = BooleanField(default=False)
     active = BooleanField(default=False)
@@ -118,7 +105,6 @@ class Transaction(BaseModel):
     destination_account = CharField(default="")
     hash = TextField(null=True)
     amount = BigIntegerField(default=0)
-    memo = CharField(null=True)
     notes = CharField(null=True)
     class Meta:
         db_table = 'transactions'

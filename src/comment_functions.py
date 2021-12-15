@@ -1,4 +1,5 @@
 import datetime
+import Web3 from web3
 from text import (
     COMMENT_FOOTER, 
     SUBJECTS, 
@@ -14,8 +15,6 @@ from shared import (
     LOGGER,
     TIP_BOT_USERNAME,
     ACCOUNT,
-    from_stroop,
-    to_stroop,
     Message,
     Subreddit,
     NumberUtil,
@@ -29,7 +28,6 @@ from tipper_functions import (
     parse_text,
     account_tip,
     TipError,
-    parse_stroop_amount,
 )
 
 # handles tip commands on subreddits

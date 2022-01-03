@@ -4,8 +4,6 @@ from shared import (
     LOGGER,
     TIP_COMMANDS,
     db,
-    from_stroop,
-    to_stroop,
     History,
     Account,
     ACCOUNT,
@@ -108,7 +106,7 @@ def parse_text(text):
 
 def add_new_account(username):
     username = str(username)
-    memo = username.lower()
+    address = None
     account = Account(
         username = username,
         memo = memo,

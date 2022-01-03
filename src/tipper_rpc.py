@@ -5,17 +5,18 @@ import config
 
 from shared import (
     CURRENCY,
-    CONTRACT;
+    DEFAULT_URL,
+    CONTRACT_ADDRESS,
     ACCOUNT,
     PRIVATEKEY,
     LOGGER,
 )
 
-bsc = "https://bsc-dataseed.binance.org/"
+bsc = DEFAULT_URL
 web3 = Web3(Web3.HTTPProvider(bsc))
 
-main_address= ACCOUNT
-contract_address = CONTRACT #be sure to use a BSC Address in uppercase format like this 0x9F0818B... 
+tipbot_address= ACCOUNT
+contract_address = CONTRACT_ADDRESS 
 
 abi = json.loads('[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"spender","type":"address"},{"name":"tokens","type":"uint256"}],"name":"approve","outputs":[{"name":"success","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"tokens","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"success","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"_totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"tokenOwner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"a","type":"uint256"},{"name":"b","type":"uint256"}],"name":"safeSub","outputs":[{"name":"c","type":"uint256"}],"payable":false,"stateMutability":"pure","type":"function"},{"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"tokens","type":"uint256"}],"name":"transfer","outputs":[{"name":"success","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"a","type":"uint256"},{"name":"b","type":"uint256"}],"name":"safeDiv","outputs":[{"name":"c","type":"uint256"}],"payable":false,"stateMutability":"pure","type":"function"},{"constant":true,"inputs":[{"name":"a","type":"uint256"},{"name":"b","type":"uint256"}],"name":"safeMul","outputs":[{"name":"c","type":"uint256"}],"payable":false,"stateMutability":"pure","type":"function"},{"constant":true,"inputs":[{"name":"tokenOwner","type":"address"},{"name":"spender","type":"address"}],"name":"allowance","outputs":[{"name":"remaining","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"a","type":"uint256"},{"name":"b","type":"uint256"}],"name":"safeAdd","outputs":[{"name":"c","type":"uint256"}],"payable":false,"stateMutability":"pure","type":"function"},{"inputs":[],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"tokens","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"tokenOwner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"tokens","type":"uint256"}],"name":"Approval","type":"event"}]')
 
@@ -38,21 +39,7 @@ token_tx = contract.functions.transfer(main_address, amount).buildTransaction({
 sign_txn = web3.eth.account.signTransaction(token_tx, private_key=YOURPRIVATEKEY)
 web3.eth.sendRawTransaction(sign_txn.rawTransaction)
 print(f"Transaction has been sent to {main_address}")
-server = Server(horizon_url=DEFAULT_URL)
 
-# Get a workable fee to prevent a transaction from getting stuck.
-def get_fee():
-    try:
-        fee_stats = server.fee_stats().call()
-        base_fee = int(fee_stats["last_ledger_base_fee"])
-        ledger_capacity_usage = float(str(fee_stats["ledger_capacity_usage"]))
-        higher_fee = int(fee_stats["fee_charged"]["p70"])        
-        if (ledger_capacity_usage >= 0.9): # Ledger almost fully used
-            return higher_fee 
-        else:
-            return base_fee
-    except SdkError:
-        return DEFAULT_FEE 
 
 # Check if an account is open.
 def is_account_open(account):
@@ -63,17 +50,7 @@ def is_account_open(account):
         pass
     return False
 
-# Check if an account is open.
-def account_has_trustline(account, asset_name, asset_issuer):    
-    try:
-        asset = Asset(asset_name, asset_issuer)
-        accounts = server.accounts().account_id(account).for_asset(asset).call()
-        return True
-    except SdkError:
-        pass
-    return False
-
-# Get balances of XLM and assets in the main account.
+# Get balances of BNB and assets in the main account.
 def get_balances(account):
     balances = {}
     try:

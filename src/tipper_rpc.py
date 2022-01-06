@@ -52,16 +52,7 @@ def is_account_open(account):
 
 # Get balances of BNB and assets in the main account.
 def get_balances(account):
-    balances = {}
-    try:
-        accounts = server.accounts().account_id(account).call()
-        for balance in accounts["balances"]:
-            if balance["asset_type"] == "native":
-                balances["xlm"] = to_stroop(balance["balance"])    
-            else:
-                balances[balance["asset_code"].lower()] = to_stroop(balance["balance"])
-    except SdkError:
-        LOGGER.exception("Cannot get balances")
+    balances = web3.eth.get_balance(account)
     return balances
 
 
